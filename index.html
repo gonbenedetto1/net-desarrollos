@@ -216,8 +216,6 @@ input,textarea,select{font-family:var(--font);font-size:0.9rem}
     <label>Contraseña</label><input type="password" id="authPass" placeholder="••••••••">
     <div id="regFields" class="login-extra">
       <label>Nombre completo</label><input type="text" id="authName" placeholder="Ej: Camilo Benedetto">
-      <label>Rol</label>
-      <select id="authRole"><option value="developer">Developer</option><option value="designer">Designer</option><option value="manager">Manager</option><option value="member">Miembro</option></select>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:0.7rem" id="authBtn" onclick="handleAuth()">Iniciar sesión</button>
   </div>
@@ -312,7 +310,7 @@ input,textarea,select{font-family:var(--font);font-size:0.9rem}
     <label>Nombre</label><input type="text" id="rmName" disabled>
     <div class="modal-row">
       <div><label>Rol</label><select id="rmRole"><option value="developer">Developer</option><option value="designer">Designer</option><option value="manager">Manager</option><option value="member">Miembro</option><option value="Director">Director</option></select></div>
-      <div><label>Permisos</label><select id="rmPerm"><option value="admin">Admin</option><option value="manager">Manager</option><option value="member">Miembro</option></select></div>
+      <div><label>Permisos</label><select id="rmPerm"><option value="admin">Administrador</option><option value="member">Usuario</option></select></div>
     </div>
     <label>Color</label>
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap" id="rmColors"></div>
@@ -362,13 +360,13 @@ async function handleAuth(){
   document.getElementById('authBtn').disabled=true;document.getElementById('authBtn').textContent='Cargando...';
   try{
     if(authMode==='register'){
-      const name=document.getElementById('authName').value.trim(),role=document.getElementById('authRole').value;
+      const name=document.getElementById('authName').value.trim();
       if(!name){err.textContent='Ingresá tu nombre';err.style.display='block';return}
       const{data,error}=await sb.auth.signUp({email,password:pass});
       if(error)throw error;
       const initials=name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2);
       const colors=['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0891b2','#db2777','#4f46e5'];
-      await sb.from('profiles').insert({id:data.user.id,name,initials,role,color:colors[Math.floor(Math.random()*colors.length)],permission_level:'member'});
+      await sb.from('profiles').insert({id:data.user.id,name,initials,role:'Usuario',color:colors[Math.floor(Math.random()*colors.length)],permission_level:'member'});
       me=data.user;await loadApp();
     }else{
       const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
@@ -394,7 +392,7 @@ async function loadApp(){
 }
 
 function buildSidebar(){
-  const adm=['admin','manager'].includes(myProf.permission_level);
+  const adm=myProf.permission_level==='admin';
   const items=[
     {id:'dashboard',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',label:'Dashboard',show:true},
     {id:'projects',icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',label:'Sistemas',show:true},
@@ -435,9 +433,12 @@ const sBadge=s=>({active:'<span class="badge badge-active">Activo</span>',planni
 const pColor=p=>({urgent:'var(--red)',high:'var(--amber)',medium:'var(--primary)',low:'var(--text-dim)'}[p]);
 const fDate=d=>{if(!d)return'-';return new Date(d+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'})};
 const isOD=(d,s)=>s!=='completed'&&d&&new Date(d)<new Date();
-const isAdm=()=>myProf&&['admin','manager'].includes(myProf.permission_level);
+const isAdm=()=>myProf&&myProf.permission_level==='admin';
 
-function renderAll(){renderDash();renderProjects();renderTasks();renderTimeline();renderTeam();if(isAdm()){loadExpenses().then(()=>renderInvest())}renderNotifs();renderActivity()}
+function renderAll(){
+  if(isAdm()){loadExpenses().then(()=>{renderDash();renderInvest()})}else{renderDash()}
+  renderProjects();renderTasks();renderTimeline();renderTeam();renderNotifs();renderActivity();
+}
 
 async function logAct(action,type,eid,details){
   try{await sb.from('activity_log').insert({user_id:me.id,action,entity_type:type,entity_id:eid,details})}catch(e){}
@@ -452,7 +453,7 @@ function renderDash(){
   const allPending=tasks.filter(t=>t.status!=='completed');
   const overdue=allPending.filter(t=>isOD(t.due_date,t.status));
   const myOverdue=myTasks.filter(t=>isOD(t.due_date,t.status));
-  const total=projects.reduce((s,p)=>s+Number(p.investment_total||0),0);
+  const expTotal=expenses.reduce((s,e)=>s+Number(e.amount||0),0);
   
   // Overdue alert
   const overdueAlert=myOverdue.length>0?`<div style="background:var(--red-light);border:1px solid var(--red);border-radius:10px;padding:0.8rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:0.8rem">
@@ -472,7 +473,7 @@ function renderDash(){
       <div class="stat-card"><div class="stat-label">Mis tareas</div><div class="stat-value">${myTasks.length}</div><div class="stat-change ${myOverdue.length>0?'down':'up'}">${myOverdue.length} vencidas</div></div>
       <div class="stat-card"><div class="stat-label">Total pendientes</div><div class="stat-value">${allPending.length}</div><div class="stat-change down">${overdue.length} vencidas</div></div>
       <div class="stat-card"><div class="stat-label">Sistemas</div><div class="stat-value">${projects.length}</div><div class="stat-change up">${projects.filter(p=>p.status==='active').length} activos</div></div>
-      ${isAdm()?`<div class="stat-card"><div class="stat-label">Inversión</div><div class="stat-value" style="font-family:var(--mono)">$${(total/1e6).toFixed(1)}M</div></div>`:`<div class="stat-card"><div class="stat-label">Equipo</div><div class="stat-value">${profiles.length}</div></div>`}
+      ${isAdm()?`<div class="stat-card"><div class="stat-label">Inversión</div><div class="stat-value" style="font-family:var(--mono)">$${expTotal.toLocaleString('es-AR')}</div></div>`:`<div class="stat-card"><div class="stat-label">Equipo</div><div class="stat-value">${profiles.length}</div></div>`}
     </div>
     <div class="grid-2">
       <div class="card"><div class="card-header"><h3>Sistemas</h3></div><div class="card-body">${projects.map(p=>{
@@ -819,12 +820,14 @@ async function saveProject(){
 function renderTeam(){
   document.getElementById('v-team').innerHTML=`<div class="card"><div class="card-header"><h3>Equipo</h3></div><div class="card-body">
     ${profiles.map(m=>{
-      const permColors={admin:'var(--red)',manager:'var(--amber)',member:'var(--primary)'};
+      const isAdmin=m.permission_level==='admin';
+      const permLabel=isAdmin?'Administrador':'Usuario';
+      const permColor=isAdmin?'var(--red)':'var(--primary)';
       return `<div class="team-member">
         <div class="team-avatar" style="background:${m.color}">${m.initials}</div>
         <div class="team-info"><h4>${m.name}</h4><p>${tasks.filter(t=>t.assignee_id===m.id&&t.status!=='completed').length} tareas pendientes</p></div>
         <div class="team-role">${m.role}</div>
-        <div class="team-perm" style="background:${permColors[m.permission_level]||'var(--primary)'};color:#fff">${m.permission_level}</div>
+        <div class="team-perm" style="background:${permColor};color:#fff">${permLabel}</div>
         ${isAdm()?`<div class="team-actions"><button class="btn btn-sm btn-secondary" onclick="editRole('${m.id}')">Editar</button></div>`:''}
       </div>`;
     }).join('')}
